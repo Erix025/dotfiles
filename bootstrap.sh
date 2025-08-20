@@ -55,5 +55,19 @@ else
     echo "dotfiles 已存在，跳过"
 fi
 
+echo "=== Step 6: 安装 UV 和 Pixi ==="
+if ! command -v uv &>/dev/null; then
+    echo "安装 UV"
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+else
+    echo "✅ UV 已安装"
+fi
+
+if ! command -v pixi &>/dev/null; then
+    echo "安装 Pixi"
+    curl -fsSL https://pixi.sh/install.sh | sh
+else
+    echo "✅ Pixi 已安装"
+fi
+
 echo "✅ 全部完成！"
-echo "请确保 SSH_AUTH_SOCK 已设置，可以使用 ssh 命令访问 GitHub"
