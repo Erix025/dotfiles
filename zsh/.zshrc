@@ -400,5 +400,8 @@ fi
 alias vi=nvim
 alias git='LANG=en_US git'
 
+# Disable Homebrew auto-update
+export HOMEBREW_NO_AUTO_UPDATE=1
+
 source ~/dotfiles/zsh/headline.zsh-theme
 # source $ZSH/oh-my-zsh.sh
