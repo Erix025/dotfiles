@@ -70,4 +70,14 @@ else
     echo "✅ Pixi 已安装"
 fi
 
+echo "=== Step 7: 设置 SSH Authorized Keys ==="
+
+PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtBDeXHWjpQMX3bo80suNheGw5Q9W1TX3ty1csARYMQ eric025@IndexDev.local"
+if ! grep -q "$PUBLIC_KEY" ~/.ssh/authorized_keys; then
+    echo "添加 SSH 公钥到 authorized_keys"
+    echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys
+else
+    echo "SSH 公钥已存在，跳过"
+fi
+
 echo "✅ 全部完成！"
