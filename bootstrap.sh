@@ -16,6 +16,14 @@ check_homebrew() {
     fi
 }
 
+get_sudo() {
+    if [[ $EUID -eq 0 ]]; then
+        echo ""  # 如果是 root 用户，返回空字符串
+    else
+        echo "sudo"  # 如果不是 root 用户，返回 sudo
+    fi
+}
+
 install_package() {
     local package_name="$1"
     local command_name="${2:-$1}"
@@ -32,17 +40,23 @@ install_package() {
         case "$package_name" in
             "zsh") brew install zsh ;;
             "bitwarden-cli") brew install bitwarden-cli ;;
+            "tmux") brew install tmux ;;
             *) echo "⚠️ 未知包: $package_name"; exit 1 ;;
         esac
     elif [[ -f /etc/debian_version ]]; then
+        local sudo_cmd=$(get_sudo)
         case "$package_name" in
             "zsh")
-                sudo apt update
-                sudo apt install -y zsh
+                $sudo_cmd apt update
+                $sudo_cmd apt install -y zsh
+                ;;
+            "tmux")
+                $sudo_cmd apt update
+                $sudo_cmd apt install -y tmux
                 ;;
             "bitwarden-cli")
-                sudo apt update
-                sudo apt install -y jq curl
+                $sudo_cmd apt update
+                $sudo_cmd apt install -y jq curl
                 # 安装 nvm
                 if ! command -v nvm &>/dev/null; then
                     echo "正在安装 nvm..."
@@ -56,12 +70,16 @@ install_package() {
                 ;;
         esac
     elif [[ -f /etc/redhat-release ]]; then
+        local sudo_cmd=$(get_sudo)
         case "$package_name" in
             "zsh")
-                sudo dnf install -y zsh || sudo yum install -y zsh
+                $sudo_cmd dnf install -y zsh || $sudo_cmd yum install -y zsh
+                ;;
+            "tmux")
+                $sudo_cmd dnf install -y tmux || $sudo_cmd yum install -y tmux
                 ;;
             "bitwarden-cli")
-                sudo dnf install -y jq curl || sudo yum install -y jq curl
+                $sudo_cmd dnf install -y jq curl || $sudo_cmd yum install -y jq curl
                 # 安装 nvm
                 if ! command -v nvm &>/dev/null; then
                     echo "正在安装 nvm..."
@@ -99,10 +117,13 @@ install_python_tool() {
 echo "=== Step 1: 安装 zsh ==="
 install_package "zsh"
 
-echo "=== Step 2: 安装 Bitwarden CLI ==="
+echo "=== Step 2: 安装 tmux ==="
+install_package "tmux"
+
+echo "=== Step 3: 安装 Bitwarden CLI ==="
 install_package "bitwarden-cli" "bw"
 
-echo "=== Step 3: 登录 Bitwarden ==="
+echo "=== Step 4: 登录 Bitwarden ==="
 
 bw config server "$BW_SERVER"
 
@@ -113,7 +134,7 @@ else
     echo "✅ 已登录 Bitwarden"
 fi
 
-echo "=== Step 4: 配置 SSH Key ==="
+echo "=== Step 5: 配置 SSH Key ==="
 
 echo "正在解锁 Bitwarden..."
 BW_SESSION=$(bw unlock --raw)
@@ -148,16 +169,15 @@ Host github.com
 EOF
 chmod 600 ~/.ssh/config
 
-echo "=== Step 5: 测试 SSH 连接 ==="
+echo "=== Step 6: 测试 SSH 连接 ==="
 echo "正在测试 SSH 连接..."
-ssh-add -L || true
 if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
     echo "✅ SSH 连接测试成功"
 else
     echo "⚠️ SSH 连接测试失败，但继续执行"
 fi
 
-echo "=== Step 6: 克隆 dotfiles ==="
+echo "=== Step 7: 克隆 dotfiles ==="
 if [[ ! -d ~/dotfiles ]]; then
     echo "正在克隆 dotfiles 仓库..."
     git clone "$DOTFILES_REPO" ~/dotfiles
@@ -166,11 +186,11 @@ else
     echo "✅ dotfiles 已存在，跳过"
 fi
 
-echo "=== Step 7: 安装 UV 和 Pixi ==="
+echo "=== Step 8: 安装 UV 和 Pixi ==="
 install_python_tool "uv" "https://astral.sh/uv/install.sh"
 install_python_tool "pixi" "https://pixi.sh/install.sh"
 
-echo "=== Step 8: 设置 SSH Authorized Keys ==="
+echo "=== Step 9: 设置 SSH Authorized Keys ==="
 
 mkdir -p ~/.ssh
 if ! grep -q "$PUBLIC_KEY" ~/.ssh/authorized_keys 2>/dev/null; then
@@ -182,7 +202,7 @@ else
     echo "✅ SSH 公钥已存在，跳过"
 fi
 
-echo "=== Step 9: 设置 VS Code Tunnel ==="
+echo "=== Step 10: 设置 VS Code Tunnel ==="
 
 # 确保 ~/bin 目录存在
 mkdir -p ~/bin
