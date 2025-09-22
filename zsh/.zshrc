@@ -5,7 +5,7 @@ zstyle ':omz:update' mode reminder  # just remind me to update when it's time
 [[ -r ~/.antigen/antigen.zsh ]] ||
 	(
 		mkdir -p ~/.antigen &&
-		curl -L https://shell.haoxx.me/antigen.zsh > ~/.antigen/antigen.zsh
+		curl -L https://sh.erix025.me/antigen.zsh > ~/.antigen/antigen.zsh
 	)
 
 # Helper function for logging and command execution
