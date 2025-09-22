@@ -186,11 +186,23 @@ else
     echo "✅ dotfiles 已存在，跳过"
 fi
 
-echo "=== Step 8: 安装 UV 和 Pixi ==="
+echo "=== Step 8: 配置 Git ==="
+echo "正在配置 Git..."
+
+# 设置 Git 用户信息
+git config --global user.name "Xi Lin"
+git config --global user.email "erix025@outlook.com"
+
+# 设置 Git 默认分支名
+git config --global init.defaultBranch main
+
+echo "✅ Git 配置完成"
+
+echo "=== Step 9: 安装 UV 和 Pixi ==="
 install_python_tool "uv" "https://astral.sh/uv/install.sh"
 install_python_tool "pixi" "https://pixi.sh/install.sh"
 
-echo "=== Step 9: 设置 SSH Authorized Keys ==="
+echo "=== Step 10: 设置 SSH Authorized Keys ==="
 
 mkdir -p ~/.ssh
 if ! grep -q "$PUBLIC_KEY" ~/.ssh/authorized_keys 2>/dev/null; then
@@ -202,7 +214,7 @@ else
     echo "✅ SSH 公钥已存在，跳过"
 fi
 
-echo "=== Step 10: 设置 VS Code Tunnel ==="
+echo "=== Step 11: 设置 VS Code Tunnel ==="
 
 # 确保 ~/bin 目录存在
 mkdir -p ~/bin
