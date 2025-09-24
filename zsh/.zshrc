@@ -403,5 +403,11 @@ alias git='LANG=en_US git'
 # Disable Homebrew auto-update
 export HOMEBREW_NO_AUTO_UPDATE=1
 
+export ANTHROPIC_BASE_URL="https://code.akclau.de/api"
+# Claude API Key configuration
+if [[ -f ~/.config/claude_api_key ]]; then
+    export ANTHROPIC_AUTH_TOKEN=$(cat ~/.config/claude_api_key)
+fi
+
 source ~/dotfiles/zsh/headline.zsh-theme
-# source $ZSH/oh-my-zsh.sh
+# source $ZSH/oh-my-zsh.shexport PATH="/Users/eric025/.pixi/bin:$PATH"
