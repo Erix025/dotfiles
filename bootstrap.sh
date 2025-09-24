@@ -154,7 +154,8 @@ set_default_shell() {
 
     echo "正在将默认 shell 更改为 $target_shell..."
     local sudo_cmd=$(get_sudo)
-    $sudo_cmd chsh -s "$shell_path" "$USER"
+    local current_user="${USER:-$(whoami)}"
+    $sudo_cmd chsh -s "$shell_path" "$current_user"
 
     echo "✅ 默认 shell 已更改为 $target_shell"
     echo "ℹ️ 请重新登录或重启终端以生效"
