@@ -127,30 +127,62 @@ install_python_tool() {
 # 模块定义
 # ============================================================================
 
+set_default_shell() {
+    local target_shell="$1"
+    local current_shell=$(basename "$SHELL")
+
+    if [[ "$current_shell" == "$target_shell" ]]; then
+        echo "✅ 默认 shell 已经是 $target_shell"
+        return 0
+    fi
+
+    # 查找 shell 路径
+    local shell_path
+    if command -v "$target_shell" &>/dev/null; then
+        shell_path=$(command -v "$target_shell")
+    else
+        echo "⚠️ 找不到 $target_shell"
+        return 1
+    fi
+
+    # 检查 shell 是否在 /etc/shells 中
+    if ! grep -q "^$shell_path$" /etc/shells; then
+        echo "正在将 $shell_path 添加到 /etc/shells..."
+        local sudo_cmd=$(get_sudo)
+        echo "$shell_path" | $sudo_cmd tee -a /etc/shells
+    fi
+
+    echo "正在将默认 shell 更改为 $target_shell..."
+    local sudo_cmd=$(get_sudo)
+    $sudo_cmd chsh -s "$shell_path" "$USER"
+
+    echo "✅ 默认 shell 已更改为 $target_shell"
+    echo "ℹ️ 请重新登录或重启终端以生效"
+}
+
 module_basic_tools() {
     echo "=== 模块: 基础工具 (zsh, tmux) ==="
     install_package "zsh"
     install_package "tmux"
+    set_default_shell "zsh"
 }
 
 module_bitwarden() {
     echo "=== 模块: Bitwarden CLI ==="
     install_package "bitwarden-cli" "bw"
 
-    echo "正在登录 Bitwarden..."
-    CURRENT_SERVER=$(bw status | jq -r '.serverUrl // empty')
-    if [[ -n "$CURRENT_SERVER" && "$CURRENT_SERVER" != "$BW_SERVER" ]]; then
-        echo "当前服务器: $CURRENT_SERVER"
-        echo "目标服务器: $BW_SERVER"
-        echo "需要更改服务器配置，先退出登录..."
-        bw logout
-        echo "正在配置 Bitwarden 服务器..."
-        bw config server "$BW_SERVER"
-    fi
+    echo "正在配置 Bitwarden 服务器..."
+    # 首先配置服务器，确保使用正确的服务器地址
+    bw config server "$BW_SERVER"
+    echo "✅ 服务器配置完成: $BW_SERVER"
 
-    if bw status | grep -q '"status":"unauthenticated"'; then
+    # 检查登录状态
+    BW_STATUS=$(bw status)
+    if echo "$BW_STATUS" | grep -q '"status":"unauthenticated"'; then
         echo "正在登录 Bitwarden..."
         bw login
+    elif echo "$BW_STATUS" | grep -q '"status":"locked"'; then
+        echo "✅ 已登录 Bitwarden，但需要解锁"
     else
         echo "✅ 已登录 Bitwarden"
     fi
