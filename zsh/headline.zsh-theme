@@ -124,15 +124,46 @@ declare -A HL_CONTENT_TEMPLATE=(
   # ...
 )
 
+# -------------------------
+# Segment sources (no eval)
+# -------------------------
+headline-seg-USER() { print -r -- "$USER" }
 
-# Commands to produce each segment's content
+headline-seg-HOST() {
+  # More consistent across platforms than `hostname -s`
+  print -r -- "${HOST%%.*}"
+}
+
+headline-seg-VENV() {
+  # Show nothing when no env is active.
+  if [[ -n "$VIRTUAL_ENV" ]]; then
+    print -r -- "${VIRTUAL_ENV:t}"
+    return 0
+  fi
+
+  # Conda: prefer CONDA_DEFAULT_ENV
+  if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
+    # Hide "base" by default; comment this line to show base
+    [[ "$CONDA_DEFAULT_ENV" == "base" ]] && return 0
+    print -r -- "$CONDA_DEFAULT_ENV"
+    return 0
+  fi
+
+  return 0
+}
+
+headline-seg-PATH() { print -rP "%~" }
+
+headline-clock() { date "+%l:%M:%S %p" }
+
+# Commands to produce each segment's content (function names)
 declare -A HL_CONTENT_SOURCE=(
-  USER   'echo $USER'
-  HOST   'hostname -s'
-  VENV   'if [ -n "$VIRTUAL_ENV" ]; then echo "${VIRTUAL_ENV##*/}"; elif [ -n "$CONDA_PREFIX" ] && [[ "$CONDA_PREFIX" != *"/miniconda3" ]]; then echo "${CONDA_PREFIX##*/}"; else echo "base"; fi'
-  PATH   'print -rP "%~"'
-  BRANCH 'headline-git-branch'
-  STATUS 'headline-git-status'
+  USER   headline-seg-USER
+  HOST   headline-seg-HOST
+  VENV   headline-seg-VENV
+  PATH   headline-seg-PATH
+  BRANCH headline-git-branch
+  STATUS headline-git-status
   # ...
 )
 
@@ -198,8 +229,8 @@ HL_CLOCK_MODE='off' # on|off
 # Template for the clock
 HL_CLOCK_TEMPLATE="%{$faint%}..."
 
-# Command which outputs clock content
-HL_CLOCK_SOURCE='date "+%l:%M:%S %p"' # consider 'date +%+' for full date
+# Command which outputs clock content (function name, no eval)
+HL_CLOCK_SOURCE='headline-clock' # e.g. 'headline-clock'
 
 
 # Show non-zero exit code, include a guessed meaning too, or don't show
@@ -243,6 +274,12 @@ _HL_AT_TOP='true' # whether prompt is at top of the screen
 _HL_CMD_NUM=0 # number of commands entered
 _HL_CMD_NUM_PREV=-1 # previous number of commands entered, no command if same
 
+# Git status cache (perf)
+_HL_GIT_CACHE_PWD=''
+_HL_GIT_CACHE_COUNTS=''   # stored as "key val key val ..."
+_HL_GIT_DIRTY='true'      # force first refresh
+_HL_IN_GIT='false'
+
 # Zsh configuration
 setopt PROMPT_SP # always start prompt on new line
 setopt PROMPT_SUBST # enable substitutions
@@ -270,14 +307,13 @@ headline-prompt-len() { # (str, num?)
   echo $x
 }
 
-# Repeat character a number of times
+# Repeat character a number of times (fast)
 headline-repeat-char() { # (char, num)
-  # Note: This replaces the "${(pl:$num::$char:)}" expansion
-  local result=''
-  for (( i = 0; i < $2; i++ )); do
-    result+=$1
-  done
-  echo $result
+  emulate -L zsh
+  local char="$1"
+  local -i num="$2"
+  (( num <= 0 )) && { print -r -- ""; return 0; }
+  print -r -- "${(pl:$num::$char:)}"
 }
 
 # Guess the exit code meaning
@@ -309,8 +345,34 @@ headline-exit-meaning() { # (num)
 
 # Git command wrapper
 headline-git() {
-  # TODO is this necessary?
   GIT_OPTIONAL_LOCKS=0 command git "$@"
+}
+
+headline-in-git() {
+  headline-git rev-parse --is-inside-work-tree &>/dev/null
+}
+
+# Mark git cache dirty when changing directory
+add-zsh-hook chpwd headline-chpwd
+headline-chpwd() {
+  _HL_GIT_DIRTY='true'
+  _HL_GIT_CACHE_PWD="$PWD"
+  _HL_IN_GIT='false'
+}
+
+# Mark git cache dirty for commands likely to affect repo status
+headline-maybe-dirties-git() {
+  local cmd="$1"
+  [[ -z "$cmd" ]] && return 1
+
+  # Git & wrappers
+  [[ "$cmd" == git\ * || "$cmd" == hub\ * || "$cmd" == gh\ * ]] && return 0
+
+  # Common working-tree mutators / editors (conservative)
+  [[ "$cmd" == (rm|mv|cp|touch|mkdir|rmdir|chmod|chown|sed|perl|python|python3)\ * ]] && return 0
+  [[ "$cmd" == (vim|nvim|code)\ * ]] && return 0
+
+  return 1
 }
 
 # Get git branch (or hash)
@@ -327,8 +389,32 @@ headline-git-branch() {
   fi
 }
 
-# Get the quantity of each git status
+# Get the quantity of each git status (cached)
 headline-git-status-counts() {
+  emulate -L zsh
+
+  # Fast path: if not in git repo, return nothing
+  if [[ "$_HL_IN_GIT" != "true" ]]; then
+    if headline-in-git; then
+      _HL_IN_GIT='true'
+    else
+      _HL_IN_GIT='false'
+      _HL_GIT_CACHE_COUNTS=''
+      return 1
+    fi
+  fi
+
+  # Refresh only when needed
+  if [[ "$_HL_GIT_CACHE_PWD" != "$PWD" ]]; then
+    _HL_GIT_DIRTY='true'
+    _HL_GIT_CACHE_PWD="$PWD"
+  fi
+
+  if [[ "$_HL_GIT_DIRTY" != "true" && -n "$_HL_GIT_CACHE_COUNTS" ]]; then
+    print -r -- "$_HL_GIT_CACHE_COUNTS"
+    return 0
+  fi
+
   local -A counts=(
     'STAGED' 0 # staged changes
     'CHANGED' 0 # unstaged changes
@@ -345,54 +431,62 @@ headline-git-status-counts() {
   local raw lines
   raw="$(headline-git status --porcelain -b 2> /dev/null)"
   if [[ $? == 128 ]]; then
-    return 1 # catastrophic failure, abort
+    _HL_IN_GIT='false'
+    _HL_GIT_CACHE_COUNTS=''
+    return 1
   fi
   lines=(${(@f)raw})
 
   # Process tracking line
   if [[ ${lines[1]} =~ '^## [^ ]+ \[(.*)\]' ]]; then
     local items=("${(@s/,/)match}")
+    local item
     for item in $items; do
       if [[ $item =~ '(behind|ahead|diverged) ([0-9]+)?' ]]; then
         case $match[1] in
-          'behind') counts[BEHIND]=$match[2];;
-          'ahead') counts[AHEAD]=$match[2];;
-          'diverged') counts[DIVERGED]=$match[2];;
+          behind)   counts[BEHIND]=$match[2];;
+          ahead)    counts[AHEAD]=$match[2];;
+          diverged) counts[DIVERGED]=$match[2];;
         esac
       fi
     done
   fi
 
   # Process status lines
+  local line
   for line in $lines; do
     if [[ $line =~ '^##|^!!' ]]; then
       continue
     elif [[ $line =~ '^U[ADU]|^[AD]U|^AA|^DD' ]]; then
-      counts[CONFLICTS]=$(( ${counts[CONFLICTS]} + 1 ))
+      counts[CONFLICTS]=$(( counts[CONFLICTS] + 1 ))
     elif [[ $line =~ '^\?\?' ]]; then
-      counts[UNTRACKED]=$(( ${counts[UNTRACKED]} + 1 ))
+      counts[UNTRACKED]=$(( counts[UNTRACKED] + 1 ))
     elif [[ $line =~ '^[MTADRC] ' ]]; then
-      counts[STAGED]=$(( ${counts[STAGED]} + 1 ))
+      counts[STAGED]=$(( counts[STAGED] + 1 ))
     elif [[ $line =~ '^[MTARC][MTD]' ]]; then
-      counts[STAGED]=$(( ${counts[STAGED]} + 1 ))
-      counts[CHANGED]=$(( ${counts[CHANGED]} + 1 ))
+      counts[STAGED]=$(( counts[STAGED] + 1 ))
+      counts[CHANGED]=$(( counts[CHANGED] + 1 ))
     elif [[ $line =~ '^ [MTADRC]' ]]; then
-      counts[CHANGED]=$(( ${counts[CHANGED]} + 1 ))
+      counts[CHANGED]=$(( counts[CHANGED] + 1 ))
     fi
   done
 
   # Check for stashes
-  if $(headline-git rev-parse --verify refs/stash &> /dev/null); then
+  if (headline-git rev-parse --verify refs/stash &> /dev/null); then
     counts[STASHED]=$(headline-git rev-list --walk-reflogs --count refs/stash 2> /dev/null)
   fi
 
   # Update clean flag
+  local key val
   for key val in ${(@kv)counts}; do
     [[ $key == 'CLEAN' ]] && continue
     (( $val > 0 )) && counts[CLEAN]=0
   done
 
-  echo ${(@kv)counts} # key1 val1 key2 val2 ...
+  local out="${(@kv)counts}"
+  _HL_GIT_CACHE_COUNTS="$out"
+  _HL_GIT_DIRTY='false'
+  print -r -- "$out"
 }
 
 # Get git status
@@ -446,18 +540,10 @@ headline-transfer-styles() { # (str, str)
   done
   result+=${dest[$index]}
   echo $result
-
-  # TODO use regex... why does this suck so much? can't match multiple?
-  # if [[ $1 =~ '%{([^%]*)%}' ]]; then
-  #   echo $MBEGIN $MEND $MATCH
-  #   echo $mbegin $mend $match # expect arrays?
-  # fi
 }
 
 
 # Handle Ctrl+L press
-zle -N headline-clear-screen
-bindkey '^L' headline-clear-screen
 headline-clear-screen() {
   _HL_AT_TOP='true'
   _HL_INFO='' # ensure info line will print
@@ -484,6 +570,11 @@ headline-preexec() {
     _HL_AT_TOP='true'
     _HL_INFO='' # ensure info line will print
   fi
+
+  # Git cache invalidation (only when relevant)
+  if headline-maybe-dirties-git "$2"; then
+    _HL_GIT_DIRTY='true'
+  fi
 }
 
 # Before prompting
@@ -500,7 +591,7 @@ headline-precmd() {
   for key val in "${(@kv)HL_CONTENT_SOURCE}"; do
     content_lengths[$key]=0
     (( $COLUMNS < ${HL_COLS_REMOVAL[$key]:-0} )) && continue # omit segment
-    contents[$key]=$(eval ${=val})
+    contents[$key]=$($val)
     local -i length=$(headline-prompt-len ${contents[$key]:-''} 999)
     (( content_length += $length )); content_lengths[$key]=$length
   done
@@ -673,7 +764,7 @@ headline-precmd() {
 
   # Right prompt
   if [[ $HL_CLOCK_MODE == 'on' ]]; then
-    RPROMPT='${HL_CLOCK_TEMPLATE/$HL_TEMPLATE_TOKEN/$(eval ${=HL_CLOCK_SOURCE})}%{$reset%}$HL_RPROMPT'
+    RPROMPT='${HL_CLOCK_TEMPLATE/$HL_TEMPLATE_TOKEN/$($HL_CLOCK_SOURCE)}%{$reset%}$HL_RPROMPT'
   else
     RPROMPT=$HL_RPROMPT
   fi

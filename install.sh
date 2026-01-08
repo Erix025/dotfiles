@@ -21,6 +21,6 @@ link_file() {
 
 echo "=== 开始部署 dotfiles ==="
 
-link_file "$DOTFILES_DIR/zsh/.zshrc" "$HOME/.zshrc"
+link_file "$DOTFILES_DIR/zsh/zshrc" "$HOME/.zshrc"
 
 echo "✅ dotfiles 部署完成"
