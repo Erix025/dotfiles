@@ -19,7 +19,19 @@ for module in "$MODULE_DIR"/*.sh; do
     source "$module"
 done
 
-declare -A MODULE_STATUS=()
+# Older macOS ships Bash 3.x which lacks associative arrays, so we emulate the
+# "module already run" set with a simple string + helper functions.
+MODULE_STATUS=""
+
+module_is_done() {
+    local module="$1"
+    [[ "$MODULE_STATUS" == *"|$module|"* ]]
+}
+
+mark_module_done() {
+    local module="$1"
+    module_is_done "$module" || MODULE_STATUS+="|$module|"
+}
 
 usage() {
     cat <<'EOF'
@@ -45,7 +57,7 @@ run_module() {
     local module="$1"
     local func="module_${module}"
 
-    if [[ "${MODULE_STATUS[$module]:-}" == "done" ]]; then
+    if module_is_done "$module"; then
         log "跳过模块 $module (已执行)"
         return 0
     fi
@@ -57,7 +69,7 @@ run_module() {
 
     log "开始执行模块: $module"
     "$func"
-    MODULE_STATUS[$module]="done"
+    mark_module_done "$module"
 }
 
 template_modules() {
