@@ -5,6 +5,7 @@ export ZSH_DOTDIR="$DOTFILES_DIR/zsh"
 # Load modules in order
 source "$ZSH_DOTDIR/00-options.zsh"
 source "$ZSH_DOTDIR/10-path.zsh"
+source "$ZSH_DOTDIR/15-secrets.zsh"
 source "$ZSH_DOTDIR/20-antigen.zsh"
 source "$ZSH_DOTDIR/30-plugins.zsh"
 source "$ZSH_DOTDIR/40-highlight.zsh"
