@@ -38,17 +38,16 @@ usage() {
 用法: run.sh [选项]
 
 可用模式:
-  --basic     prereq + dotfiles + shell
-  --dev       prereq + secrets + dotfiles + shell + ssh
-  --server    prereq + secrets + ssh + shell
-  --full      prereq + secrets + dotfiles + shell + ssh
+  --basic     prereq + dotfiles + shell，获取统一 shell 体验
+  --dev       prereq + secrets + dotfiles + shell + ssh + optional，获取完整 git/Claude/Codex 体验
 
 其它参数:
   --modules m1,m2,...   手动指定模块顺序
   --include-optional    在模板执行完成后执行 optional 模块
+  --tunnel              在最后安装 VS Code Tunnel
   -h, --help            显示本帮助
 
-模块名称: prereq, secrets, dotfiles, shell, ssh, optional
+模块名称: prereq, secrets, dotfiles, shell, ssh, optional, tunnel
 EOF
     exit "${1:-0}"
 }
@@ -76,20 +75,19 @@ template_modules() {
     local mode="$1"
     case "$mode" in
         basic) echo "prereq dotfiles shell" ;;
-        dev) echo "prereq secrets dotfiles shell ssh" ;;
-        server) echo "prereq secrets ssh shell" ;;
-        full) echo "prereq secrets dotfiles shell ssh" ;;
+        dev) echo "prereq secrets dotfiles shell ssh optional" ;;
         *) die "未知模式: $mode" ;;
     esac
 }
 
 MODE="basic"
 RUN_OPTIONAL=false
+RUN_TUNNEL=false
 CUSTOM_SEQUENCE=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --basic|--dev|--server|--full)
+        --basic|--dev)
             MODE="${1#--}"
             shift
             ;;
@@ -100,6 +98,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --include-optional)
             RUN_OPTIONAL=true
+            shift
+            ;;
+        --tunnel)
+            RUN_TUNNEL=true
             shift
             ;;
         -h|--help)
@@ -123,4 +125,8 @@ done
 
 if [[ "$RUN_OPTIONAL" == true ]]; then
     run_module "optional"
+fi
+
+if [[ "$RUN_TUNNEL" == true ]]; then
+    run_module "tunnel"
 fi

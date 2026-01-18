@@ -7,6 +7,28 @@ bw_ensure_cli() {
 bw_ensure_server() {
     local server="$1"
     [[ -n "$server" ]] || die "未指定 Bitwarden 服务器"
+
+    local status_json=""
+    status_json=$(bw status 2>/dev/null || true)
+
+    local current_server=""
+    local session_status=""
+    if [[ -n "$status_json" ]]; then
+        current_server=$(echo "$status_json" | jq -r '.serverUrl // empty' 2>/dev/null || true)
+        session_status=$(echo "$status_json" | jq -r '.status // empty' 2>/dev/null || true)
+    fi
+
+    if [[ "$current_server" == "$server" ]]; then
+        return
+    fi
+
+    if [[ "$session_status" == "unlocked" || "$session_status" == "locked" ]]; then
+        warn "Bitwarden 已登录 (status: $session_status)，跳过 server 切换 (当前: ${current_server:-<未配置>}，目标: $server)"
+        warn "如需切换服务器请运行: bw logout && bw config server \"$server\""
+        return
+    fi
+
+    log "配置 Bitwarden 服务器: $server"
     bw config server "$server" >/dev/null
 }
 

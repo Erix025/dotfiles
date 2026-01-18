@@ -26,7 +26,7 @@ ezsh_cmd_ssh() {
       _ezsh_ssh_usage
       ;;
     *)
-      print -r -- "[ezsh][ssh] Unknown subcommand: $cmd"
+      print -ru2 -- "[ezsh][ssh] Unknown subcommand: $cmd"
       _ezsh_ssh_usage
       return 1
       ;;
@@ -88,7 +88,7 @@ _ezsh_ssh_load_config() {
 _ezsh_ssh_require_cmd() {
   local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    print -r -- "[ezsh][ssh] Missing required command: $cmd"
+    print -ru2 -- "[ezsh][ssh] Missing required command: $cmd"
     return 1
   fi
 }
@@ -104,7 +104,20 @@ _ezsh_ssh_init() {
 
 _ezsh_ssh_agent_ready() {
   [[ -S "${SSH_AUTH_SOCK:-}" ]] || return 1
-  ssh-add -l >/dev/null 2>&1
+
+  local output rc
+  output=$(ssh-add -l 2>&1)
+  rc=$?
+
+  if (( rc == 0 )); then
+    return 0
+  fi
+
+  if (( rc == 1 )) && [[ "$output" == *"The agent has no identities."* ]]; then
+    return 0
+  fi
+
+  return 1
 }
 
 _ezsh_ssh_macos_launchctl_sock() {
@@ -134,7 +147,7 @@ _ezsh_ssh_ensure_agent() {
     return 0
   fi
 
-  print -r -- "[ezsh][ssh] ssh-agent unavailable"
+  print -ru2 -- "[ezsh][ssh] ssh-agent unavailable"
   return 1
 }
 
@@ -142,28 +155,48 @@ _ezsh_ssh_require_bw_session() {
   _ezsh_ssh_require_cmd bw || return 1
   _ezsh_ssh_require_cmd jq || return 1
 
+  local bw_status=""
+  bw_status=$(bw status 2>/dev/null || true)
+
   if [[ -n "${BW_SERVER:-}" ]]; then
-    bw config server "$BW_SERVER" >/dev/null
+    local current_server=""
+    local session_state=""
+    if [[ -n "$bw_status" ]]; then
+      current_server=$(print -r -- "$bw_status" | jq -r '.serverUrl // empty' 2>/dev/null || true)
+      session_state=$(print -r -- "$bw_status" | jq -r '.status // empty' 2>/dev/null || true)
+    fi
+
+    if [[ "$current_server" != "$BW_SERVER" ]]; then
+      if [[ "$session_state" == "unlocked" || "$session_state" == "locked" ]]; then
+        print -ru2 -- "[ezsh][ssh] Bitwarden 已登录 (status: $session_state)，跳过 server 切换 (当前: ${current_server:-<未配置>}，目标: $BW_SERVER)"
+        print -ru2 -- "[ezsh][ssh] 如需切换服务器请运行: bw logout && bw config server \"$BW_SERVER\""
+      else
+        print -ru2 -- "[ezsh][ssh] 配置 Bitwarden 服务器: $BW_SERVER"
+        bw config server "$BW_SERVER" >/dev/null
+        bw_status=""
+      fi
+    fi
   fi
 
   if [[ -n "${BW_SESSION:-}" ]]; then
     return 0
   fi
 
-  local status
-  status=$(bw status 2>/dev/null || true)
-
-  if echo "$status" | grep -q '"status":"unauthenticated"'; then
-    print -r -- "[ezsh][ssh] Bitwarden 未登录，执行 bw login..."
-    bw login || return 1
-    status=$(bw status 2>/dev/null || true)
+  if [[ -z "$bw_status" ]]; then
+    bw_status=$(bw status 2>/dev/null || true)
   fi
 
-  if echo "$status" | grep -q '"status":"unlocked"'; then
+  if echo "$bw_status" | grep -q '"status":"unauthenticated"'; then
+    print -ru2 -- "[ezsh][ssh] Bitwarden 未登录，执行 bw login..."
+    bw login || return 1
+    bw_status=$(bw status 2>/dev/null || true)
+  fi
+
+  if echo "$bw_status" | grep -q '"status":"unlocked"'; then
     bw lock >/dev/null 2>&1 || true
   fi
 
-  print -r -- "[ezsh][ssh] 正在解锁 Bitwarden..."
+  print -ru2 -- "[ezsh][ssh] 正在解锁 Bitwarden..."
   BW_SESSION=$(bw unlock --raw) || return 1
   export BW_SESSION
 }
@@ -180,19 +213,34 @@ _ezsh_ssh_fetch_private_key() {
     fi
     (( attempt++ ))
     if (( attempt >= 2 )); then
-      print -r -- "[ezsh][ssh] 获取 Bitwarden 条目失败：$item"
+      print -ru2 -- "[ezsh][ssh] 获取 Bitwarden 条目失败：$item"
       return 1
     fi
-    print -r -- "[ezsh][ssh] Bitwarden 会话失效，重新解锁..."
+    print -ru2 -- "[ezsh][ssh] Bitwarden 会话失效，重新解锁..."
     unset BW_SESSION
     _ezsh_ssh_require_bw_session || return 1
   done
 
-  local key
+  local key pub
   key=$(print -r -- "$raw" | jq -r '.sshKey.privateKey // empty')
   if [[ -z "$key" || "$key" == "null" ]]; then
-    print -r -- "[ezsh][ssh] 条目 $item 缺少 sshKey.privateKey"
+    print -ru2 -- "[ezsh][ssh] 条目 $item 缺少 sshKey.privateKey"
     return 1
+  fi
+
+  pub=$(print -r -- "$raw" | jq -r '.sshKey.publicKey // empty')
+  if [[ "$pub" == "null" ]]; then
+    pub=""
+  fi
+
+  # Normalize line endings for ssh-add to avoid "invalid format".
+  key="${key//$'\r'/}"
+  pub="${pub//$'\r'/}"
+
+  if [[ -n "$pub" ]]; then
+    typeset -g _EZSH_SSH_PUBLIC_KEY="$pub"
+  else
+    unset _EZSH_SSH_PUBLIC_KEY
   fi
 
   print -r -- "$key"
@@ -200,6 +248,17 @@ _ezsh_ssh_fetch_private_key() {
 
 _ezsh_ssh_supports_ttl() {
   ssh-add -h 2>&1 | grep -q -- '-t lifetime'
+}
+
+_ezsh_ssh_public_key() {
+  if [[ -n "${_EZSH_SSH_PUBLIC_KEY:-}" ]]; then
+    print -r -- "$_EZSH_SSH_PUBLIC_KEY"
+    return 0
+  fi
+
+  print -ru2 -- "[ezsh][ssh] Bitwarden 条目缺少 sshKey.publicKey，无法执行该操作"
+  print -ru2 -- "[ezsh][ssh] 请在 Bitwarden 条目中填写公钥字段 (通常以 ssh-ed25519/ssh-rsa 开头)"
+  return 1
 }
 
 _ezsh_ssh_add_key() {
@@ -211,16 +270,34 @@ _ezsh_ssh_add_key() {
     if _ezsh_ssh_supports_ttl; then
       ttl_args=(-t "$ttl")
     else
-      print -r -- "[ezsh][ssh] 当前 ssh-add 不支持 --ttl，已忽略"
+      print -ru2 -- "[ezsh][ssh] 当前 ssh-add 不支持 --ttl，已忽略"
     fi
   fi
 
-  if printf '%s\n' "$key" | ssh-add "${ttl_args[@]}" - >/dev/null; then
+  # 关键：用 stdin 喂给 ssh-add，避免 FIFO 在部分平台导致 invalid format
+  if print -r -- "$key" | ssh-add "${ttl_args[@]}" - >/dev/null; then
     return 0
   fi
 
-  print -r -- "[ezsh][ssh] ssh-add 加载密钥失败"
+  print -ru2 -- "[ezsh][ssh] ssh-add 加载密钥失败（stdin 模式）"
   return 1
+}
+
+_ezsh_ssh_debug_key() {
+  local key="$1"
+  local first last
+  first="$(print -r -- "$key" | sed -n '1p')"
+  last="$(print -r -- "$key" | sed -n '$p')"
+
+  print -ru2 -- "[ezsh][ssh][debug] first line: $first"
+  print -ru2 -- "[ezsh][ssh][debug] last  line: $last"
+
+  # 只做解析验证，不输出私钥内容
+  if ! print -r -- "$key" | ssh-keygen -lf /dev/stdin >/dev/null 2>&1; then
+    print -ru2 -- "[ezsh][ssh][debug] ssh-keygen 无法解析该 key（很可能不是 OpenSSH 私钥或格式被破坏）"
+    return 1
+  fi
+  return 0
 }
 
 _ezsh_ssh_state_file() {
@@ -230,9 +307,13 @@ _ezsh_ssh_state_file() {
 }
 
 _ezsh_ssh_store_fingerprint() {
-  local key="$1"
+  local pub="${_EZSH_SSH_PUBLIC_KEY:-}"
+  if [[ -z "$pub" ]]; then
+    return 0
+  fi
+
   local meta
-  meta=$(printf '%s\n' "$key" | ssh-keygen -lf /dev/stdin 2>/dev/null) || return 0
+  meta=$(printf '%s\n' "$pub" | ssh-keygen -lf /dev/stdin 2>/dev/null) || return 0
   local file
   file="$(_ezsh_ssh_state_file)"
   print -r -- "$meta" >| "$file"
@@ -252,14 +333,14 @@ _ezsh_ssh_unlock() {
     case "$1" in
       --ttl)
         if [[ -z "${2:-}" ]]; then
-          print -r -- "[ezsh][ssh] --ttl 需要秒数"
+          print -ru2 -- "[ezsh][ssh] --ttl 需要秒数"
           return 1
         fi
         ttl="$2"
         shift 2
         ;;
       *)
-        print -r -- "[ezsh][ssh] 未知参数: $1"
+        print -ru2 -- "[ezsh][ssh] 未知参数: $1"
         return 1
         ;;
     esac
@@ -270,10 +351,10 @@ _ezsh_ssh_unlock() {
 
   local key
   key="$(_ezsh_ssh_fetch_private_key)" || return 1
-
+  _ezsh_ssh_debug_key "$key" || return 1
   if _ezsh_ssh_add_key "$key" "$ttl"; then
-    print -r -- "[ezsh][ssh] GitHub 密钥已加载到 ssh-agent"
-    _ezsh_ssh_store_fingerprint "$key"
+    print -ru2 -- "[ezsh][ssh] GitHub 密钥已加载到 ssh-agent"
+    _ezsh_ssh_store_fingerprint
     _ezsh_ssh_list
   else
     return 1
@@ -291,33 +372,22 @@ _ezsh_ssh_list() {
   ssh-add -l
 }
 
-_ezsh_ssh_temp_keyfile() {
-  local tmp
-  tmp=$(mktemp "${TMPDIR:-/tmp}/ezsh-ssh-key.XXXXXX") || return 1
-  chmod 600 "$tmp"
-  printf '%s\n' "$1" > "$tmp"
-  printf '%s' "$tmp"
-}
-
 _ezsh_ssh_remove() {
   _ezsh_ssh_init || return 1
   _ezsh_ssh_ensure_agent || return 1
 
-  local key
+  local key pub
   key="$(_ezsh_ssh_fetch_private_key)" || return 1
 
-  local tmp
-  tmp="$(_ezsh_ssh_temp_keyfile "$key")" || return 1
+  pub="$(_ezsh_ssh_public_key)" || return 1
 
-  if ssh-add -d "$tmp" >/dev/null 2>&1; then
-    print -r -- "[ezsh][ssh] 已从 ssh-agent 删除 GitHub 密钥"
+  if printf '%s\n' "$pub" | ssh-add -d - >/dev/null 2>&1; then
+    print -ru2 -- "[ezsh][ssh] 已从 ssh-agent 删除 GitHub 密钥"
     _ezsh_ssh_clear_fingerprint
-    rm -f "$tmp"
     return 0
   fi
 
-  rm -f "$tmp"
-  print -r -- "[ezsh][ssh] 无法定位密钥，请手动运行: ssh-add -D"
+  print -ru2 -- "[ezsh][ssh] 无法定位密钥，请手动运行: ssh-add -D"
   return 1
 }
 
@@ -332,10 +402,10 @@ _ezsh_ssh_test() {
   print -r -- "$output"
 
   if [[ "$output" == *"successfully authenticated"* || "$output" == *"Hi "* ]]; then
-    print -r -- "[ezsh][ssh] GitHub 认证成功"
+    print -ru2 -- "[ezsh][ssh] GitHub 认证成功"
     return 0
   fi
 
-  print -r -- "[ezsh][ssh] GitHub 认证失败"
+  print -ru2 -- "[ezsh][ssh] GitHub 认证失败"
   return $rc
 }

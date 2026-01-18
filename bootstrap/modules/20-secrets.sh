@@ -7,15 +7,16 @@ module_secrets() {
     bw_ensure_server "$BW_SERVER"
     bw_ensure_session
 
-    declare -A SECRETS=(
-        ["ANTHROPIC_AUTH_TOKEN"]="ZIPLab Claude API Key:api_key"
+    local -a SECRET_SPECS=(
+        "ANTHROPIC_AUTH_TOKEN=ZIPLab Claude API Key:api_key"
     )
 
     local output=""
-    local key item field value
+    local entry key spec item field value
 
-    for key in "${!SECRETS[@]}"; do
-        IFS=':' read -r item field <<<"${SECRETS[$key]}"
+    for entry in "${SECRET_SPECS[@]}"; do
+        IFS='=' read -r key spec <<<"$entry"
+        IFS=':' read -r item field <<<"$spec"
         field="${field:-password}"
         value=$(bw_get_field "$item" "$field")
         output+="export ${key}=\"${value//$'\n'/}\"\n"
