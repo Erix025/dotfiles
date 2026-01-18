@@ -8,9 +8,13 @@ ensure_cmd() {
         return
     fi
 
+    if [[ "$cmd" == "bw" ]]; then
+        install_bitwarden_cli
+        return
+    fi
+
     if [[ -z "$pkg" ]]; then
         case "$cmd" in
-            bw) pkg="bitwarden-cli" ;;
             git) pkg="git" ;;
             curl) pkg="curl" ;;
             jq) pkg="jq" ;;
@@ -54,6 +58,42 @@ install_package() {
             die "未知系统，无法安装包: $package_name"
             ;;
     esac
+}
+
+install_bitwarden_cli() {
+    local os
+    os=$(detect_os)
+
+    case "$os" in
+        darwin)
+            install_package "bitwarden-cli"
+            ;;
+        debian|redhat)
+            install_npm_global "@bitwarden/cli"
+            ;;
+        *)
+            die "未知系统，无法安装 Bitwarden CLI"
+            ;;
+    esac
+}
+
+install_npm_global() {
+    local package_name="$1"
+
+    if ! command -v npm >/dev/null 2>&1; then
+        die "需要 npm 以安装 $package_name"
+    fi
+
+    log "安装 npm 全局包: $package_name"
+
+    local sudo_cmd
+    sudo_cmd=$(get_sudo)
+
+    if [[ -n "$sudo_cmd" ]]; then
+        $sudo_cmd npm install -g "$package_name"
+    else
+        npm install -g "$package_name"
+    fi
 }
 
 install_python_tool() {

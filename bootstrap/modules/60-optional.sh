@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
 module_optional() {
-    log "执行可选模块 (uv/pixi/Claude CLI/VS Code CLI)"
+    log "执行可选模块 (uv/pixi/Claude CLI/Codex CLI/VS Code CLI)"
 
     install_python_tool "uv" "https://astral.sh/uv/install.sh"
     install_python_tool "pixi" "https://pixi.sh/install.sh"
 
     install_claude_cli
+    install_codex_cli
     install_vscode_cli
 }
 
@@ -22,6 +23,20 @@ install_claude_cli() {
 
     log "安装 Claude CLI"
     npm install -g @anthropic-ai/claude-code
+}
+
+install_codex_cli() {
+    if command -v codex >/dev/null 2>&1; then
+        return
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+        warn "缺少 npm，无法安装 Codex CLI"
+        return
+    fi
+
+    log "安装 Codex CLI"
+    npm install -g @anthropic-ai/codex
 }
 
 install_vscode_cli() {
