@@ -5,7 +5,7 @@ module_prereq() {
     ensure_cmd git
     ensure_cmd curl
     ensure_cmd jq
-    ensure_cmd bw bitwarden-cli
     ensure_cmd npm
+    ensure_cmd bw bitwarden-cli
     ensure_cmd zsh
 }
