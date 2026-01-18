@@ -1,3 +1,18 @@
+if [[ -o interactive ]] && zle -l >/dev/null 2>&1; then
+  _ensure_widget_alias() {
+    local new="$1" existing="$2"
+    if ! zle -l | grep -qx "$new"; then
+      zle -A "$existing" "$new" >/dev/null 2>&1
+    fi
+  }
+
+  _ensure_widget_alias insert-unambiguous-or-complete complete-word
+  _ensure_widget_alias menu-search history-incremental-search-forward
+  _ensure_widget_alias recent-paths complete-word
+
+  unfunction _ensure_widget_alias 2>/dev/null || true
+fi
+
 antigen use oh-my-zsh
 
 # Core

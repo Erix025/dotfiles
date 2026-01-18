@@ -262,54 +262,37 @@ _ezsh_ssh_public_key() {
 }
 
 _ezsh_ssh_add_key() {
-  local key="$1"
-  local ttl="$2"
+    local key="$1"
+    local ttl="$2"
 
-  local ttl_args=()
-  if [[ -n "$ttl" ]]; then
-    if _ezsh_ssh_supports_ttl; then
-      ttl_args=(-t "$ttl")
-    else
-      print -ru2 -- "[ezsh][ssh] 当前 ssh-add 不支持 --ttl，已忽略"
+    local ttl_args=()
+    if [[ -n "$ttl" ]]; then
+        if _ezsh_ssh_supports_ttl; then
+            ttl_args=(-t "$ttl")
+        else
+            print -ru2 -- "[ezsh][ssh] 当前 ssh-add 不支持 --ttl，已忽略"
+        fi
     fi
-  fi
 
-  # 关键：用 stdin 喂给 ssh-add，避免 FIFO 在部分平台导致 invalid format
-  if print -r -- "$key" | ssh-add "${ttl_args[@]}" - >/dev/null; then
-    return 0
-  fi
+    # 关键：用 stdin 喂给 ssh-add，避免 FIFO 在部分平台导致 invalid format
+    if print -r -- "$key" | ssh-add "${ttl_args[@]}" - >/dev/null; then
+        return 0
+    fi
 
-  print -ru2 -- "[ezsh][ssh] ssh-add 加载密钥失败（stdin 模式）"
-  return 1
-}
-
-_ezsh_ssh_debug_key() {
-  local key="$1"
-  local first last
-  first="$(print -r -- "$key" | sed -n '1p')"
-  last="$(print -r -- "$key" | sed -n '$p')"
-
-  print -ru2 -- "[ezsh][ssh][debug] first line: $first"
-  print -ru2 -- "[ezsh][ssh][debug] last  line: $last"
-
-  # 只做解析验证，不输出私钥内容
-  if ! print -r -- "$key" | ssh-keygen -lf /dev/stdin >/dev/null 2>&1; then
-    print -ru2 -- "[ezsh][ssh][debug] ssh-keygen 无法解析该 key（很可能不是 OpenSSH 私钥或格式被破坏）"
+    print -ru2 -- "[ezsh][ssh] ssh-add 加载密钥失败（stdin 模式）"
     return 1
-  fi
-  return 0
 }
 
 _ezsh_ssh_state_file() {
-  local dir="${EZSH_STATE_DIR:-$HOME/.config/ezsh}"
-  mkdir -p "$dir"
-  printf '%s/ssh-agent.fingerprint' "$dir"
+    local dir="${EZSH_STATE_DIR:-$HOME/.config/ezsh}"
+    mkdir -p "$dir"
+    printf '%s/ssh-agent.fingerprint' "$dir"
 }
 
 _ezsh_ssh_store_fingerprint() {
-  local pub="${_EZSH_SSH_PUBLIC_KEY:-}"
-  if [[ -z "$pub" ]]; then
-    return 0
+    local pub="${_EZSH_SSH_PUBLIC_KEY:-}"
+    if [[ -z "$pub" ]]; then
+        return 0
   fi
 
   local meta
@@ -349,10 +332,9 @@ _ezsh_ssh_unlock() {
   _ezsh_ssh_init || return 1
   _ezsh_ssh_ensure_agent || return 1
 
-  local key
-  key="$(_ezsh_ssh_fetch_private_key)" || return 1
-  _ezsh_ssh_debug_key "$key" || return 1
-  if _ezsh_ssh_add_key "$key" "$ttl"; then
+    local key
+    key="$(_ezsh_ssh_fetch_private_key)" || return 1
+    if _ezsh_ssh_add_key "$key" "$ttl"; then
     print -ru2 -- "[ezsh][ssh] GitHub 密钥已加载到 ssh-agent"
     _ezsh_ssh_store_fingerprint
     _ezsh_ssh_list
