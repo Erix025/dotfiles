@@ -91,8 +91,7 @@ install_node_runtime() {
             install_package "node"
             ;;
         debian)
-            install_package "nodejs"
-            install_package "npm"
+            install_nodesource_node
             ;;
         redhat)
             install_package "nodejs"
@@ -101,6 +100,22 @@ install_node_runtime() {
             die "未知系统，无法安装 Node.js/npm"
             ;;
     esac
+}
+
+install_nodesource_node() {
+    local setup_script="https://deb.nodesource.com/setup_20.x"
+    local sudo_cmd
+    sudo_cmd=$(get_sudo)
+
+    log "配置 NodeSource 仓库 ($setup_script)"
+
+    if [[ -n "$sudo_cmd" ]]; then
+        curl -fsSL "$setup_script" | $sudo_cmd bash -
+        $sudo_cmd apt-get install -y nodejs
+    else
+        curl -fsSL "$setup_script" | bash -
+        apt-get install -y nodejs
+    fi
 }
 
 install_npm_global() {

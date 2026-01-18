@@ -36,7 +36,7 @@ install_codex_cli() {
     fi
 
     log "安装 Codex CLI"
-    npm install -g @anthropic-ai/codex
+    npm install -g @openai/codex
 }
 
 install_vscode_cli() {
