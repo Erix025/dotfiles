@@ -363,16 +363,12 @@ antigen () {
     return 1
   fi
 
-  local proxy_prefix="https://shell.haoxx.me/proxy/"
-
   # The url. No sane default for this, so just empty.
-  local url=$proxy_prefix$1
+  local url=$1
   # Check if we have to update.
   local update=${2:-false}
   # Verbose output.
   local verbose=${3:-false}
-
-  echo "starsh: Cloning $url" >&2
 
   shift $#
 
@@ -398,27 +394,6 @@ antigen () {
   if [[ ! -d $clone_dir ]]; then
     eval ${ANTIGEN_CLONE_ENV} git clone ${=ANTIGEN_CLONE_OPTS} --branch "$branch" -- "${url%|*}" "$clone_dir" &>> $ANTIGEN_LOG
     success=$?
-    
-    # If clone was successful and .gitmodules exists, set up submodules with proxy
-    if [[ $success -eq 0 && -f "${clone_dir}/.gitmodules" ]]; then
-      echo "Initializing submodules for $clone_dir" >&2
-      # Initialize submodules (which populates .git/config with entries from .gitmodules)
-      (\cd -q "$clone_dir" && eval ${ANTIGEN_CLONE_ENV} git submodule init &>> $ANTIGEN_LOG)
-      
-      # Add proxy prefix to all submodule URLs in git config - fixed regex pattern
-      (\cd -q "$clone_dir" && eval ${ANTIGEN_CLONE_ENV} git config --get-regexp 'submodule\.\*url' | while read key suburl; do
-        # Extract submodule name from key
-        submodule_name=${key#submodule.}
-        submodule_name=${submodule_name%.url}
-        
-        # Add proxy prefix and update submodule URL in .git/config
-        echo "Setting proxy for submodule $submodule_name: $proxy_prefix$suburl" >&2
-        (\cd -q "$clone_dir" && eval ${ANTIGEN_CLONE_ENV} git config submodule.$submodule_name.url $proxy_prefix$suburl &>> $ANTIGEN_LOG)
-      done)
-      
-      # Update submodules
-      (\cd -q "$clone_dir" && eval ${ANTIGEN_CLONE_ENV} git submodule update ${=ANTIGEN_SUBMODULE_OPTS} &>> $ANTIGEN_LOG)
-    fi
   elif $update; then
     # Save current revision.
     local old_rev="$(--plugin-git rev-parse HEAD)"
