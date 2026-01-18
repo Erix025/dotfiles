@@ -13,6 +13,11 @@ ensure_cmd() {
         return
     fi
 
+    if [[ "$cmd" == "npm" ]]; then
+        install_node_runtime
+        return
+    fi
+
     if [[ -z "$pkg" ]]; then
         case "$cmd" in
             git) pkg="git" ;;
@@ -73,6 +78,27 @@ install_bitwarden_cli() {
             ;;
         *)
             die "未知系统，无法安装 Bitwarden CLI"
+            ;;
+    esac
+}
+
+install_node_runtime() {
+    local os
+    os=$(detect_os)
+
+    case "$os" in
+        darwin)
+            install_package "node"
+            ;;
+        debian)
+            install_package "nodejs"
+            install_package "npm"
+            ;;
+        redhat)
+            install_package "nodejs"
+            ;;
+        *)
+            die "未知系统，无法安装 Node.js/npm"
             ;;
     esac
 }
