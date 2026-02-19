@@ -15,3 +15,7 @@ source "$ZSH_DOTDIR/70-tools-ezsh.zsh"
 source "$ZSH_DOTDIR/80-env-alias.zsh"
 source "$ZSH_DOTDIR/90-theme.zsh"
 source "$ZSH_DOTDIR/99-local.zsh"
+
+if [[ -f "$ZSH_DOTDIR/99-local.ignored.zsh" ]]; then
+  source "$ZSH_DOTDIR/99-local.ignored.zsh"
+fi
